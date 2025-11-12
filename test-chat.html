@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Assistant Chat Client</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #chat-window { border: 1px solid #ccc; height: 300px; padding: 10px; overflow-y: scroll; margin-bottom: 10px; }
+        .message { margin-bottom: 5px; }
+        .user { color: blue; }
+        .bot { color: green; }
+        .status { color: orange; font-style: italic; font-size: 0.8em; }
+    </style>
+</head>
+<body>
+
+    <h2>🤖 Trợ lý AI Nha khoa</h2>
+    <div id="chat-window"></div>
+    <input type="text" id="user-input" placeholder="Nhập câu hỏi của bạn..." style="width: 80%;">
+    <button onclick="sendMessage()">Gửi</button>
+    <p class="status" id="connection-status">Đang kết nối...</p>
+    <p class="status" id="processing-status"></p>
+
+    <script>
+        // Thay đổi URL này nếu Server của bạn chạy ở port khác
+        const SOCKET_URL = 'http://localhost:5000'; 
+        const USER_ID = 'test_user_123'; // ID người dùng cố định để test lịch sử chat
+
+        // Khởi tạo kết nối Socket.IO
+        const socket = io(SOCKET_URL, { transports: ['websocket'] });
+        const chatWindow = document.getElementById('chat-window');
+        const userInput = document.getElementById('user-input');
+        const connectionStatus = document.getElementById('connection-status');
+        const processingStatus = document.getElementById('processing-status');
+
+        // --- Hàm hiển thị tin nhắn ---
+        function appendMessage(sender, text, type = 'message') {
+            const msgDiv = document.createElement('div');
+            msgDiv.classList.add('message', sender);
+            if (type === 'status') {
+                msgDiv.classList.add('status');
+                msgDiv.innerHTML = `[Trạng thái]: ${text}`;
+            } else {
+                const prefix = (sender === 'user') ? 'Bạn: ' : 'AI: ';
+                msgDiv.innerHTML = `<strong>${prefix}</strong>${text}`;
+            }
+            chatWindow.appendChild(msgDiv);
+            chatWindow.scrollTop = chatWindow.scrollHeight; // Cuộn xuống cuối
+        }
+
+        // --- Logic Gửi Tin nhắn ---
+        window.sendMessage = function() {
+            const text = userInput.value.trim();
+            if (text === '') return;
+
+            // 1. Gửi tin nhắn lên giao diện
+            appendMessage('user', text);
+            
+            // 2. Gửi event qua Socket.IO
+            socket.emit('question:send', { userId: USER_ID, text: text });
+
+            // 3. Xóa input và disable
+            userInput.value = '';
+            userInput.disabled = true;
+        }
+
+        userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // --- Lắng nghe các sự kiện từ Server (ServerToClientEvents) ---
+        
+        // 1. Kết nối thành công
+        socket.on('connect', () => {
+            connectionStatus.textContent = '✅ Đã kết nối Socket.IO';
+            console.log(`Connected with ID: ${socket.id}`);
+            userInput.disabled = false;
+        });
+
+        // 2. Mất kết nối
+        socket.on('disconnect', () => {
+            connectionStatus.textContent = '❌ Mất kết nối';
+            userInput.disabled = true;
+        });
+
+        // 3. Server nhận được câu hỏi
+        socket.on('question:ack', (payload) => {
+            processingStatus.textContent = `...Server đã nhận: "${payload.text}"`;
+        });
+
+        // 4. Cập nhật trạng thái xử lý
+        socket.on('status:update', (payload) => {
+            processingStatus.textContent = `...Đang xử lý: ${payload.stage} (${JSON.stringify(payload.meta || {})})`;
+            appendMessage('system', `Bắt đầu bước: **${payload.stage}**`, 'status');
+        });
+
+        // 5. Hoàn thành và có câu trả lời cuối cùng
+        socket.on('question:done', (payload) => {
+            appendMessage('bot', payload.answer);
+            processingStatus.textContent = `✅ Hoàn thành. Chất lượng: ${payload.quality.label}`;
+            userInput.disabled = false;
+        });
+
+        // 6. Xảy ra lỗi
+        socket.on('question:error', (payload) => {
+            appendMessage('system', `LỖI: ${payload.message}`, 'status');
+            processingStatus.textContent = `❌ Lỗi xử lý`;
+            userInput.disabled = false;
+        });
+
+    </script>
+</body>
+</html>
