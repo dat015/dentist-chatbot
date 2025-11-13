@@ -47,7 +47,15 @@ export class FrontierService {
       },
     });
     console.log("ai", response);
-    return response.text;
+    const parts = response?.candidates?.[0]?.content?.parts ?? [];
+    const text = parts
+      .map((part) => (typeof part === "object" && "text" in part ? (part as { text?: string }).text ?? "" : ""))
+      .join("")
+      .trim();
+    if (!text) {
+      throw new Error("AI service returned empty content");
+    }
+    return text;
   }
 
   // Hàm synthesize giữ nguyên logic, chỉ thay đổi hàm gọi lõi
